@@ -2,6 +2,10 @@
 
 Code for the [LearnWeb3](https://learnweb3.io) course about building a Flash Loans protocol. Part of the [Stacks Developer Degree](https://learnweb3.io/degrees/stacks-developer-degree).
 
+## Live Demo
+
+**[View Live Application](https://frontend-daxhsd6le-big14ways-projects.vercel.app)** 🚀
+
 ## WalletConnect Integration
 
 This project now includes a modern Next.js frontend with **WalletConnect v2** integration, enabling secure wallet connections for flash loan operations.
