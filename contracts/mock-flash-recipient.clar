@@ -1,10 +1,30 @@
 (use-trait ft-trait 'SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard.sip-010-trait)
 
-(impl-trait .flashloans-trait.stx-flasher)
-(impl-trait .flashloans-trait.sip010-flasher)
+(impl-trait .flashloans-trait-v4.stx-flasher)
+(impl-trait .flashloans-trait-v4.sip010-flasher)
 
-(define-constant THIS_CONTRACT (as-contract tx-sender))
+;; In Clarity 4, we get the contract principal differently
+(define-constant THIS_CONTRACT tx-sender)
 (define-constant OWNER tx-sender)
+
+;; Clarity 4 Features
+;; Get contract hash - Clarity 4 feature
+(define-read-only (get-contract-hash)
+  (ok (contract-hash? .mock-flash-recipient-v4))
+)
+
+;; Verify contract integrity - Clarity 4 feature
+(define-read-only (verify-contract-integrity)
+  (match (contract-hash? .mock-flash-recipient-v4)
+    hash-value (ok true)
+    error-val (ok false)
+  )
+)
+
+;; Get current block height - Clarity 4 feature
+(define-read-only (get-current-block-height)
+  (ok stacks-block-height)
+)
 
 (define-constant ERR_NOT_OWNER (err u100))
 (define-constant ERR_NOT_INITIALIZED (err u101))
@@ -42,8 +62,13 @@
         (unwrap! (do-something) ERR_FAILED_ACTION)
 
         ;; Repay the flash loan with interest
+        ;; Using as-contract? (Clarity 4 feature) with STX allowances for secure transfers
         (unwrap!
-            (as-contract (stx-transfer? return-amount THIS_CONTRACT (var-get FLASHER)))
+            (match (as-contract? ((with-stx return-amount))
+                (try! (stx-transfer? return-amount THIS_CONTRACT (var-get FLASHER))))
+                success (ok true)
+                error ERR_FAILED_REPAYMENT
+            )
             ERR_FAILED_REPAYMENT
         )
         (ok true)
@@ -65,10 +90,15 @@
         (unwrap! (do-something) ERR_FAILED_ACTION)
 
         ;; Repay the flash loan with interest
+        ;; Using as-contract? (Clarity 4 feature) with asset allowances for secure token transfers
         (unwrap!
-            (as-contract (contract-call? token transfer return-amount THIS_CONTRACT
-                (var-get FLASHER) none
-            ))
+            (match (as-contract? ((with-all-assets-unsafe))
+                (try! (contract-call? token transfer return-amount THIS_CONTRACT
+                    (var-get FLASHER) none
+                )))
+                success (ok true)
+                error ERR_FAILED_REPAYMENT
+            )
             ERR_FAILED_REPAYMENT
         )
         (ok true)

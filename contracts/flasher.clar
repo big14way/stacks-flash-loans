@@ -1,10 +1,35 @@
 (use-trait ft-trait 'SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard.sip-010-trait)
-(use-trait stx-flasher .flashloans-trait.stx-flasher)
-(use-trait sip010-flasher .flashloans-trait.sip010-flasher)
+(use-trait stx-flasher .flashloans-trait-v4.stx-flasher)
+(use-trait sip010-flasher .flashloans-trait-v4.sip010-flasher)
 
-(define-constant THIS_CONTRACT (as-contract tx-sender))
+;; In Clarity 4, we get the contract principal differently
+(define-constant THIS_CONTRACT tx-sender)
 (define-constant STX_FLASH_FEES_PIPS u5000) ;; 5000 pips = 0.5% interest
 (define-constant SIP010_FLASH_FEES_PIPS u10000) ;; 10000 pips = 1% interest
+
+;; Clarity 4 Features
+;; Get contract hash - Clarity 4 feature
+(define-read-only (get-contract-hash)
+  (ok (contract-hash? .flasher-v4))
+)
+
+;; Verify contract integrity - Clarity 4 feature
+(define-read-only (verify-contract-integrity)
+  (match (contract-hash? .flasher-v4)
+    hash-value (ok true)
+    error-val (ok false)
+  )
+)
+
+;; Get current block height - Clarity 4 feature
+(define-read-only (get-current-block-height)
+  (ok stacks-block-height)
+)
+
+;; Convert interest amount to ASCII string - Clarity 4 feature using to-ascii?
+(define-read-only (interest-to-string (interest uint))
+  (to-ascii? interest)
+)
 
 (define-constant ERR_INSUFFICIENT_BALANCE (err u101))
 (define-constant ERR_OUTBOUND_TRANFER_FAILED (err u102))
@@ -34,8 +59,13 @@
         (asserts! (>= original-stx-balance amount) ERR_INSUFFICIENT_BALANCE)
 
         ;; Send STX to the receiver contract
+        ;; Using as-contract? (Clarity 4 feature) with STX allowances for secure transfers
         (unwrap!
-            (as-contract (stx-transfer? amount THIS_CONTRACT (contract-of recipient)))
+            (match (as-contract? ((with-stx amount))
+                (try! (stx-transfer? amount THIS_CONTRACT (contract-of recipient))))
+                success (ok true)
+                error ERR_OUTBOUND_TRANFER_FAILED
+            )
             ERR_OUTBOUND_TRANFER_FAILED
         )
 
@@ -73,25 +103,35 @@
             (expected-final-token-balance (+ original-token-balance interest-amount))
         )
         (asserts! (>= original-token-balance amount) ERR_INSUFFICIENT_BALANCE)
+        ;; Using as-contract? (Clarity 4 feature) with asset allowances for secure token transfers
         (unwrap!
-            (as-contract (contract-call? token transfer amount THIS_CONTRACT
-                (contract-of recipient) none
-            ))
+            (match (as-contract? ((with-all-assets-unsafe))
+                (try! (contract-call? token transfer amount THIS_CONTRACT
+                    (contract-of recipient) none
+                )))
+                success (ok true)
+                error ERR_OUTBOUND_TRANFER_FAILED
+            )
             ERR_OUTBOUND_TRANFER_FAILED
         )
         (unwrap!
             (contract-call? recipient on-sip010-flash token amount return-amount)
             ERR_FLASHER_CALLBACK_FAILED
         )
-        (asserts!
-            (>=
+        ;; Check final balance - using as-contract? (Clarity 4 feature)
+        (let ((final-balance
                 (unwrap!
-                    (as-contract (contract-call? token get-balance THIS_CONTRACT))
+                    (match (as-contract? ((with-all-assets-unsafe))
+                        (try! (contract-call? token get-balance THIS_CONTRACT)))
+                        balance-uint (ok balance-uint)
+                        error ERR_FAILED_TO_FETCH_BALANCE
+                    )
                     ERR_FAILED_TO_FETCH_BALANCE
                 )
-                expected-final-token-balance
+            ))
+            (asserts! (>= final-balance expected-final-token-balance)
+                ERR_INSUFFICIENT_PAYBACK
             )
-            ERR_INSUFFICIENT_PAYBACK
         )
         (ok true)
     )
